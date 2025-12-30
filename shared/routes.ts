@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import { 
-  insertUserSchema, insertResourceSchema, insertStockSchema, insertAlertSchema, 
+import {
+  insertUserSchema, insertResourceSchema, insertStockSchema, insertAlertSchema,
   insertRequestSchema, insertNotificationSchema, insertAuditLogSchema, insertDistributionPlanSchema,
-  users, resources, stocks, alerts, requests, notifications, auditLogs, distributionPlan,
-  stockHistory, insertStockHistorySchema
+  IUser, IResource, IStock, IAlert, IRequest, INotification, IAuditLog, IDistributionPlan,
+  IStockHistory, insertStockHistorySchema
 } from './schema';
 
 export const errorSchemas = {
@@ -20,12 +20,57 @@ export const errorSchemas = {
 };
 
 export const api = {
+  auth: {
+    login: {
+      method: 'POST' as const,
+      path: '/api/auth/login',
+      input: z.object({
+        email: z.string().email(),
+        password: z.string(),
+      }),
+      responses: {
+        200: z.object({
+          user: z.custom<IUser>(),
+          message: z.string(),
+        }),
+        401: z.object({ message: z.string() }),
+        400: errorSchemas.validation,
+      },
+    },
+    register: {
+      method: 'POST' as const,
+      path: '/api/auth/register',
+      input: insertUserSchema,
+      responses: {
+        201: z.object({
+          user: z.custom<IUser>(),
+          message: z.string(),
+        }),
+        400: errorSchemas.validation,
+      },
+    },
+    user: {
+      method: 'GET' as const,
+      path: '/api/auth/user',
+      responses: {
+        200: z.custom<IUser>(),
+        401: z.object({ message: z.string() }),
+      },
+    },
+    logout: {
+      method: 'POST' as const,
+      path: '/api/auth/logout',
+      responses: {
+        200: z.object({ message: z.string() }),
+      },
+    },
+  },
   users: {
     me: {
       method: 'GET' as const,
       path: '/api/user',
       responses: {
-        200: z.custom<typeof users.$inferSelect>(),
+        200: z.custom<IUser>(),
         401: z.object({ message: z.string() }),
       },
     },
@@ -34,7 +79,7 @@ export const api = {
       path: '/api/user',
       input: insertUserSchema.partial(),
       responses: {
-        200: z.custom<typeof users.$inferSelect>(),
+        200: z.custom<IUser>(),
         400: errorSchemas.validation,
       },
     },
@@ -42,7 +87,7 @@ export const api = {
       method: 'GET' as const,
       path: '/api/users',
       responses: {
-        200: z.array(z.custom<typeof users.$inferSelect>()),
+        200: z.array(z.custom<IUser>()),
       },
     },
   },
@@ -54,7 +99,7 @@ export const api = {
         type: z.string().optional(),
       }).optional(),
       responses: {
-        200: z.array(z.custom<typeof resources.$inferSelect>()),
+        200: z.array(z.custom<IResource>()),
       },
     },
     create: {
@@ -146,7 +191,7 @@ export const api = {
         userId: z.string().optional(),
       }).optional(),
       responses: {
-        200: z.array(z.custom<typeof requests.$inferSelect & { resource: typeof resources.$inferSelect, user: typeof users.$inferSelect }>()),
+        200: z.array(z.custom<IRequest & { resource: IResource, user: IUser }>()),
       },
     },
     create: {

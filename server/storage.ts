@@ -1,150 +1,118 @@
-import { db } from "./db";
 import {
-  users, resources, stocks, alerts, requests, notifications, auditLogs, stockHistory, distributionPlan,
-  type User, type InsertUser,
-  type Resource, type Stock, type Alert, type Request, type Notification, type AuditLog, type StockHistory, type DistributionPlan,
+  User, Resource, Stock, Alert, Request, Notification, AuditLog, StockHistory, DistributionPlan,
+} from "./models";
+import {
+  type IUser, type InsertUser,
+  type IResource, type IStock, type IAlert, type IRequest, type INotification, type IAuditLog, type IStockHistory, type IDistributionPlan,
   type InsertResource, type InsertStock, type InsertAlert, type InsertRequest, type InsertNotification, type InsertAuditLog, type InsertStockHistory, type InsertDistributionPlan
 } from "@shared/schema";
-import { eq, desc, and, lt, gte, sql } from "drizzle-orm";
 
 export interface IStorage {
   // User
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
-  updateUser(id: string, user: Partial<InsertUser>): Promise<User>;
+  getUser(id: string): Promise<IUser | null>;
+  getUserByUsername(username: string): Promise<IUser | null>;
+  createUser(user: InsertUser): Promise<IUser>;
+  updateUser(id: string, user: Partial<InsertUser>): Promise<IUser>;
 
   // Resources
-  getResources(): Promise<Resource[]>;
-  createResource(resource: InsertResource): Promise<Resource>;
+  getResources(): Promise<IResource[]>;
+  createResource(resource: InsertResource): Promise<IResource>;
 
   // Stocks
-  getStocks(city?: string): Promise<(Stock & { resource: Resource })[]>;
-  updateStock(stock: InsertStock): Promise<Stock>;
+  getStocks(city?: string): Promise<(IStock & { resource: IResource })[]>;
+  updateStock(stock: InsertStock): Promise<IStock>;
 
   // Alerts
-  getAlerts(): Promise<Alert[]>;
-  createAlert(alert: InsertAlert): Promise<Alert>;
+  getAlerts(): Promise<IAlert[]>;
+  createAlert(alert: InsertAlert): Promise<IAlert>;
 
   // Requests
-  getRequests(): Promise<(Request & { resource: Resource, user: User })[]>;
-  createRequest(request: InsertRequest): Promise<Request>;
-  updateRequestStatus(id: number, status: string, approvedBy?: string): Promise<Request>;
-  getRequestById(id: number): Promise<Request | undefined>;
+  getRequests(): Promise<(IRequest & { resource: IResource, user: IUser })[]>;
+  createRequest(request: InsertRequest): Promise<IRequest>;
+  updateRequestStatus(id: string, status: string, approvedBy?: string): Promise<IRequest>;
+  getRequestById(id: string): Promise<IRequest | null>;
 
   // Notifications
-  getNotifications(userId: string, unread?: boolean): Promise<Notification[]>;
-  createNotification(notification: InsertNotification): Promise<Notification>;
-  markNotificationAsRead(id: number): Promise<Notification>;
+  getNotifications(userId: string, unread?: boolean): Promise<INotification[]>;
+  createNotification(notification: InsertNotification): Promise<INotification>;
+  markNotificationAsRead(id: string): Promise<INotification>;
 
   // Audit Logs
-  getAuditLogs(entity?: string, days?: number): Promise<AuditLog[]>;
-  createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
+  getAuditLogs(entity?: string, days?: number): Promise<IAuditLog[]>;
+  createAuditLog(log: InsertAuditLog): Promise<IAuditLog>;
 
   // Stock History
-  getStockHistory(resourceId: number, city?: string, days?: number): Promise<StockHistory[]>;
-  createStockHistory(history: InsertStockHistory): Promise<StockHistory>;
+  getStockHistory(resourceId: string, city?: string, days?: number): Promise<IStockHistory[]>;
+  createStockHistory(history: InsertStockHistory): Promise<IStockHistory>;
 
   // Distribution Plans
-  getDistributionPlans(): Promise<DistributionPlan[]>;
-  createDistributionPlan(plan: InsertDistributionPlan): Promise<DistributionPlan>;
+  getDistributionPlans(): Promise<IDistributionPlan[]>;
+  createDistributionPlan(plan: InsertDistributionPlan): Promise<IDistributionPlan>;
 
   // Analytics
-  getCriticalStocks(): Promise<(Stock & { resource: Resource })[]>;
+  getCriticalStocks(): Promise<(IStock & { resource: IResource })[]>;
   getRequestStats(): Promise<{ pending: number; approved: number; fulfilled: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
-  async getUser(id: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
+  async getUser(id: string): Promise<IUser | null> {
+    return await User.findById(id);
+  }
+
+  async getUserByUsername(username: string): Promise<IUser | null> {
+    return await User.findOne({ username });
+  }
+
+  async createUser(insertUser: InsertUser): Promise<IUser> {
+    const user = new User(insertUser);
+    return await user.save();
+  }
+
+  async updateUser(id: string, updates: Partial<InsertUser>): Promise<IUser> {
+    const user = await User.findByIdAndUpdate(id, updates, { new: true });
+    if (!user) throw new Error('User not found');
     return user;
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user;
+  async getResources(): Promise<IResource[]> {
+    return await Resource.find();
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db.insert(users).values(insertUser).returning();
-    return user;
+  async createResource(resource: InsertResource): Promise<IResource> {
+    const res = new Resource(resource);
+    return await res.save();
   }
 
-  async updateUser(id: string, updates: Partial<InsertUser>): Promise<User> {
-    const [user] = await db.update(users).set(updates).where(eq(users.id, id)).returning();
-    return user;
-  }
-
-  async getResources(): Promise<Resource[]> {
-    return await db.select().from(resources);
-  }
-
-  async createResource(resource: InsertResource): Promise<Resource> {
-    const [res] = await db.insert(resources).values(resource).returning();
-    return res;
-  }
-
-  async getStocks(city?: string): Promise<(Stock & { resource: Resource })[]> {
-    const query = db.select({
-      id: stocks.id,
-      resourceId: stocks.resourceId,
-      city: stocks.city,
-      postalCode: stocks.postalCode,
-      quantity: stocks.quantity,
-      updatedAt: stocks.updatedAt,
-      resource: resources,
-    })
-    .from(stocks)
-    .innerJoin(resources, eq(stocks.resourceId, resources.id));
-
-    if (city) {
-      query.where(eq(stocks.city, city));
-    }
-    
-    // Execute query and cast the result to match the expected type
+  async getStocks(city?: string): Promise<(IStock & { resource: IResource })[]> {
+    const query = Stock.find(city ? { city } : {}).populate('resourceId');
     const results = await query;
-    return results as (Stock & { resource: Resource })[];
+    return results.map(stock => ({
+      ...stock.toObject(),
+      resource: stock.resourceId,
+    })) as (IStock & { resource: IResource })[];
   }
 
-  async updateStock(insertStock: InsertStock): Promise<Stock> {
-    // Check if stock exists for this resource in this city
-    const existing = await db.select()
-      .from(stocks)
-      .where(eq(stocks.resourceId, insertStock.resourceId));
-    
-    // Simple logic: just insert for now to track history or multiple entries, 
-    // or update if we wanted to be stricter. Let's insert to keep it simple.
-    const [stock] = await db.insert(stocks).values(insertStock).returning();
-    return stock;
+  async updateStock(insertStock: InsertStock): Promise<IStock> {
+    const stock = new Stock(insertStock);
+    return await stock.save();
   }
 
-  async getAlerts(): Promise<Alert[]> {
-    return await db.select().from(alerts).orderBy(desc(alerts.createdAt));
+  async getAlerts(): Promise<IAlert[]> {
+    return await Alert.find().sort({ createdAt: -1 });
   }
 
-  async createAlert(alert: InsertAlert): Promise<Alert> {
-    const [newAlert] = await db.insert(alerts).values(alert).returning();
-    return newAlert;
+  async createAlert(alert: InsertAlert): Promise<IAlert> {
+    const newAlert = new Alert(alert);
+    return await newAlert.save();
   }
 
-  async getRequests(): Promise<(Request & { resource: Resource, user: User })[]> {
-    const results = await db.select({
-      id: requests.id,
-      userId: requests.userId,
-      resourceId: requests.resourceId,
-      quantity: requests.quantity,
-      status: requests.status,
-      urgency: requests.urgency,
-      createdAt: requests.createdAt,
-      resource: resources,
-      user: users,
-    })
-    .from(requests)
-    .innerJoin(resources, eq(requests.resourceId, resources.id))
-    .innerJoin(users, eq(requests.userId, users.id))
-    .orderBy(desc(requests.createdAt));
-
-    return results as (Request & { resource: Resource, user: User })[];
+  async getRequests(): Promise<(IRequest & { resource: IResource, user: IUser })[]> {
+    const results = await Request.find().populate('resourceId').populate('userId').sort({ createdAt: -1 });
+    return results.map(req => ({
+      ...req.toObject(),
+      resource: req.resourceId,
+      user: req.userId,
+    })) as (IRequest & { resource: IResource, user: IUser })[];
   }
 
   async createRequest(request: InsertRequest): Promise<Request> {

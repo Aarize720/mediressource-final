@@ -1,155 +1,213 @@
-import { pgTable, text, serial, integer, boolean, timestamp, varchar, jsonb, index, decimal } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { sql } from "drizzle-orm";
 
-// === AUTH TABLES (Mandatory for Replit Auth) ===
-export const sessions = pgTable(
-  "sessions",
-  {
-    sid: varchar("sid").primaryKey(),
-    sess: jsonb("sess").notNull(),
-    expire: timestamp("expire").notNull(),
-  },
-  (table) => [index("IDX_session_expire").on(table.expire)]
-);
-
-export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  email: varchar("email").unique(),
-  username: text("username").unique(),
-  role: text("role", { enum: ["user", "professional", "admin"] }).default("user").notNull(),
-  city: text("city"),
-  postalCode: text("postal_code"),
-  firstName: text("first_name"),
-  lastName: text("last_name"),
-  profileImageUrl: text("profile_image_url"),
-  isProfessional: boolean("is_professional").default(false),
-  department: text("department"), // Hospital/Clinic name
-  phone: text("phone"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+// Zod Schemas (keeping similar structure)
+export const insertUserSchema = z.object({
+  id: z.string().optional(),
+  email: z.string().email().optional(),
+  username: z.string().optional(),
+  password: z.string().min(6),
+  role: z.enum(["user", "professional", "admin"]).default("user"),
+  city: z.string().optional(),
+  postalCode: z.string().optional(),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  profileImageUrl: z.string().optional(),
+  isProfessional: z.boolean().default(false),
+  department: z.string().optional(),
+  phone: z.string().optional(),
 });
 
-// === APP TABLES ===
-export const resources = pgTable("resources", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  type: text("type", { enum: ["medication", "equipment", "staff"] }).notNull(),
-  description: text("description"),
-  criticalLevel: integer("critical_level").default(10), // Alert threshold
-  recommendedStock: integer("recommended_stock").default(100), // Target stock
+export const insertResourceSchema = z.object({
+  name: z.string(),
+  type: z.enum(["medication", "equipment", "staff"]),
+  description: z.string().optional(),
+  criticalLevel: z.number().default(10),
+  recommendedStock: z.number().default(100),
 });
 
-export const stocks = pgTable("stocks", {
-  id: serial("id").primaryKey(),
-  resourceId: integer("resource_id").references(() => resources.id).notNull(),
-  city: text("city").notNull(),
-  postalCode: text("postal_code").notNull(),
-  quantity: integer("quantity").notNull().default(0),
-  lastRestockDate: timestamp("last_restock_date"),
-  updateddBy: varchar("updated_by").references(() => users.id),
-  updatedAt: timestamp("updated_at").defaultNow(),
+export const insertStockSchema = z.object({
+  resourceId: z.string(), // ObjectId as string
+  city: z.string(),
+  postalCode: z.string(),
+  quantity: z.number().default(0),
+  lastRestockDate: z.date().optional(),
+  updatedBy: z.string().optional(),
 });
 
-export const stockHistory = pgTable("stock_history", {
-  id: serial("id").primaryKey(),
-  resourceId: integer("resource_id").references(() => resources.id).notNull(),
-  city: text("city").notNull(),
-  previousQuantity: integer("previous_quantity"),
-  newQuantity: integer("new_quantity"),
-  changeReason: text("change_reason", { enum: ["restock", "request_fulfilled", "manual_adjustment", "consumption"] }),
-  updatedBy: varchar("updated_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow(),
+export const insertStockHistorySchema = z.object({
+  resourceId: z.string(),
+  city: z.string(),
+  previousQuantity: z.number().optional(),
+  newQuantity: z.number().optional(),
+  changeReason: z.enum(["restock", "request_fulfilled", "manual_adjustment", "consumption"]).optional(),
+  updatedBy: z.string().optional(),
 });
 
-export const alerts = pgTable("alerts", {
-  id: serial("id").primaryKey(),
-  type: text("type", { enum: ["shortage", "epidemic", "info", "maintenance", "urgent"] }).notNull(),
-  severity: text("severity", { enum: ["low", "medium", "high", "critical"] }).notNull(),
-  message: text("message").notNull(),
-  city: text("city"),
-  resourceId: integer("resource_id").references(() => resources.id),
-  active: boolean("active").default(true),
-  createdBy: varchar("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow(),
-  resolvedAt: timestamp("resolved_at"),
+export const insertAlertSchema = z.object({
+  type: z.enum(["shortage", "epidemic", "info", "maintenance", "urgent"]),
+  severity: z.enum(["low", "medium", "high", "critical"]),
+  message: z.string(),
+  city: z.string().optional(),
+  resourceId: z.string().optional(),
+  active: z.boolean().default(true),
+  createdBy: z.string().optional(),
+  resolvedAt: z.date().optional(),
 });
 
-export const requests = pgTable("requests", {
-  id: serial("id").primaryKey(),
-  userId: varchar("user_id").references(() => users.id).notNull(),
-  resourceId: integer("resource_id").references(() => resources.id).notNull(),
-  quantity: integer("quantity").notNull(),
-  status: text("status", { enum: ["pending", "approved", "rejected", "fulfilled", "cancelled"] }).default("pending"),
-  urgency: text("urgency", { enum: ["low", "medium", "high"] }).default("medium"),
-  city: text("city"),
-  approvedBy: varchar("approved_by").references(() => users.id),
-  estimatedDeliveryDate: timestamp("estimated_delivery_date"),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+export const insertRequestSchema = z.object({
+  userId: z.string(),
+  resourceId: z.string(),
+  quantity: z.number(),
+  status: z.enum(["pending", "approved", "rejected", "fulfilled", "cancelled"]).default("pending"),
+  urgency: z.enum(["low", "medium", "high"]).default("medium"),
+  city: z.string().optional(),
+  approvedBy: z.string().optional(),
+  estimatedDeliveryDate: z.date().optional(),
+  notes: z.string().optional(),
 });
 
-export const notifications = pgTable("notifications", {
-  id: serial("id").primaryKey(),
-  userId: varchar("user_id").references(() => users.id).notNull(),
-  type: text("type", { enum: ["request_update", "alert", "stock_warning", "approval_needed", "info"] }).notNull(),
-  title: text("title").notNull(),
-  message: text("message").notNull(),
-  read: boolean("read").default(false),
-  actionUrl: text("action_url"),
-  createdAt: timestamp("created_at").defaultNow(),
+export const insertNotificationSchema = z.object({
+  userId: z.string(),
+  type: z.enum(["request_update", "alert", "stock_warning", "approval_needed", "info"]),
+  title: z.string(),
+  message: z.string(),
+  read: z.boolean().default(false),
+  actionUrl: z.string().optional(),
 });
 
-export const auditLogs = pgTable("audit_logs", {
-  id: serial("id").primaryKey(),
-  userId: varchar("user_id").references(() => users.id),
-  action: text("action").notNull(), // create, update, delete
-  entity: text("entity").notNull(), // resource, stock, alert, request
-  entityId: integer("entity_id"),
-  oldValue: jsonb("old_value"),
-  newValue: jsonb("new_value"),
-  ipAddress: text("ip_address"),
-  createdAt: timestamp("created_at").defaultNow(),
+export const insertAuditLogSchema = z.object({
+  userId: z.string().optional(),
+  action: z.string(),
+  entity: z.string(),
+  entityId: z.string().optional(),
+  oldValue: z.any().optional(),
+  newValue: z.any().optional(),
+  ipAddress: z.string().optional(),
 });
 
-export const distributionPlan = pgTable("distribution_plan", {
-  id: serial("id").primaryKey(),
-  resourceId: integer("resource_id").references(() => resources.id).notNull(),
-  fromCity: text("from_city").notNull(),
-  toCity: text("to_city").notNull(),
-  quantity: integer("quantity").notNull(),
-  status: text("status", { enum: ["planned", "in_transit", "delivered", "cancelled"] }).default("planned"),
-  estimatedArrival: timestamp("estimated_arrival"),
-  createdBy: varchar("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow(),
+export const insertDistributionPlanSchema = z.object({
+  resourceId: z.string(),
+  fromCity: z.string(),
+  toCity: z.string(),
+  quantity: z.number(),
+  status: z.enum(["planned", "in_transit", "delivered", "cancelled"]).default("planned"),
+  estimatedArrival: z.date().optional(),
+  createdBy: z.string().optional(),
 });
-
-// Insert Schemas
-export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertResourceSchema = createInsertSchema(resources).omit({ id: true });
-export const insertStockSchema = createInsertSchema(stocks).omit({ id: true, updatedAt: true });
-export const insertStockHistorySchema = createInsertSchema(stockHistory).omit({ id: true, createdAt: true });
-export const insertAlertSchema = createInsertSchema(alerts).omit({ id: true, createdAt: true });
-export const insertRequestSchema = createInsertSchema(requests).omit({ id: true, createdAt: true, updatedAt: true });
-export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true });
-export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({ id: true, createdAt: true });
-export const insertDistributionPlanSchema = createInsertSchema(distributionPlan).omit({ id: true, createdAt: true });
 
 // Types
-export type User = typeof users.$inferSelect;
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type UpsertUser = InsertUser;
-export type Resource = typeof resources.$inferSelect;
-export type Stock = typeof stocks.$inferSelect;
-export type StockHistory = typeof stockHistory.$inferSelect;
-export type Alert = typeof alerts.$inferSelect;
-export type Request = typeof requests.$inferSelect;
-export type Notification = typeof notifications.$inferSelect;
-export type AuditLog = typeof auditLogs.$inferSelect;
-export type DistributionPlan = typeof distributionPlan.$inferSelect;
+export type IUser = Document & {
+  email?: string;
+  username?: string;
+  role: string;
+  city?: string;
+  postalCode?: string;
+  firstName?: string;
+  lastName?: string;
+  profileImageUrl?: string;
+  isProfessional: boolean;
+  department?: string;
+  phone?: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
+export type IResource = Document & {
+  name: string;
+  type: string;
+  description?: string;
+  criticalLevel: number;
+  recommendedStock: number;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type IStock = Document & {
+  resourceId: string;
+  city: string;
+  postalCode: string;
+  quantity: number;
+  lastRestockDate?: Date;
+  updatedBy?: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type IStockHistory = Document & {
+  resourceId: string;
+  city: string;
+  previousQuantity?: number;
+  newQuantity?: number;
+  changeReason?: string;
+  updatedBy?: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type IAlert = Document & {
+  type: string;
+  severity: string;
+  message: string;
+  city?: string;
+  resourceId?: string;
+  active: boolean;
+  createdBy?: string;
+  resolvedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type IRequest = Document & {
+  userId: string;
+  resourceId: string;
+  quantity: number;
+  status: string;
+  urgency: string;
+  city?: string;
+  approvedBy?: string;
+  estimatedDeliveryDate?: Date;
+  notes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type INotification = Document & {
+  userId: string;
+  type: string;
+  title: string;
+  message: string;
+  read: boolean;
+  actionUrl?: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type IAuditLog = Document & {
+  userId?: string;
+  action: string;
+  entity: string;
+  entityId?: string;
+  oldValue?: any;
+  newValue?: any;
+  ipAddress?: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type IDistributionPlan = Document & {
+  resourceId: string;
+  fromCity: string;
+  toCity: string;
+  quantity: number;
+  status: string;
+  estimatedArrival?: Date;
+  createdBy?: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+// Insert Types
+export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertResource = z.infer<typeof insertResourceSchema>;
 export type InsertStock = z.infer<typeof insertStockSchema>;
 export type InsertStockHistory = z.infer<typeof insertStockHistorySchema>;

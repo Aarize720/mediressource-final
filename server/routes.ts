@@ -1,14 +1,109 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
+import bcrypt from "bcrypt";
+import { User } from "./models";
+import session from "express-session";
+
+declare module 'express-session' {
+  interface SessionData {
+    userId?: string;
+  }
+}
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  
+
+  // Session setup
+  app.use(session({
+    secret: process.env.SESSION_SECRET || 'default-secret',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: false } // Set to true in production with HTTPS
+  }));
+
+  // Auth routes
+  app.post(api.auth.register.path, async (req, res) => {
+    try {
+      const input = api.auth.register.input.parse(req.body);
+      const hashedPassword = await bcrypt.hash(input.password, 10);
+
+      const userData = {
+        ...input,
+        password: hashedPassword,
+      };
+
+      const newUser = new User(userData);
+      await newUser.save();
+
+      (req.session as any).userId = newUser._id.toString();
+
+      res.status(201).json({
+        user: { ...newUser.toObject(), password: undefined },
+        message: "User registered successfully"
+      });
+    } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.message });
+      }
+      if (err.code === 11000) { // Duplicate key
+        return res.status(400).json({ message: "Email or username already exists" });
+      }
+      throw err;
+    }
+  });
+
+  app.post(api.auth.login.path, async (req, res) => {
+    try {
+      const { email, password } = api.auth.login.input.parse(req.body);
+
+      const user = await User.findOne({ email });
+
+      if (!user || !(await bcrypt.compare(password, user.password))) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+
+      (req.session as any).userId = user._id.toString();
+
+      res.json({
+        user: { ...user.toObject(), password: undefined },
+        message: "Login successful"
+      });
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: err.message });
+      }
+      throw err;
+    }
+  });
+
+  app.get(api.auth.user.path, async (req, res) => {
+    if (!(req.session as any).userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const user = await User.findById((req.session as any).userId);
+
+    if (!user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    res.json({ ...user.toObject(), password: undefined });
+  });
+
+  app.post(api.auth.logout.path, (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ message: "Logout failed" });
+      }
+      res.json({ message: "Logout successful" });
+    });
+  });
+
   // Resources
   app.get(api.resources.list.path, async (req, res) => {
     const resourceType = req.query.type as string | undefined;

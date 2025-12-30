@@ -98,12 +98,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 </Link>
               </div>
             ) : (
-               <div className="px-2 mb-4">
-                  <a href="/api/login" className="flex items-center gap-2 text-sm font-medium text-primary hover:underline">
-                    Log In with Replit
-                  </a>
-               </div>
-            )}
+                <div className="px-2 mb-4 space-y-2">
+                   <Link href="/login">
+                     <Button variant="outline" className="w-full justify-start gap-2">
+                       Log In
+                     </Button>
+                   </Link>
+                   <Link href="/register">
+                     <Button className="w-full justify-start gap-2">
+                       Sign Up
+                     </Button>
+                   </Link>
+                </div>
+             )}
             
             {user && (
               <Button 
